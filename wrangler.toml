@@ -1,0 +1,27 @@
+name = "nodeneuron-bot"
+main = "src/worker/index.ts"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Cron (UTC). Each digest run starts 20 min before its IST slot; the 5th runs daily housekeeping.
+# Free plan allows 5 cron triggers. Keep in sync with CRON_JOBS in src/worker/index.ts.
+[triggers]
+crons = ["10 1 * * *", "10 6 * * *", "10 11 * * *", "10 16 * * *", "30 5 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "nodeneuron"
+database_id = "797ccf3b-2492-446f-93ac-9cd5ff30416b"
+migrations_dir = "migrations"
+
+[vars]
+GITHUB_REPO_URL = "https://github.com/anindhabiswas25/NNBot"
+# owner/repo that the cron triggers via repository_dispatch
+GITHUB_DISPATCH_REPO = "anindhabiswas25/NNBot"
+GEMINI_MODEL = "gemini-3.8-flash"
+GEMINI_LITE_MODEL = "gemini-3.5-flash-lite"
+GROQ_MODEL = "openai/gpt-oss-120b"
+
+# Secrets (set with `wrangler secret put NAME`, or .dev.vars locally):
+#   TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, INTERNAL_API_KEY, OWNER_TG_ID,
+#   GITHUB_DISPATCH_TOKEN, GEMINI_API_KEY, GROQ_API_KEY

@@ -1,0 +1,78 @@
+name: digest
+
+# Primary trigger: the Cloudflare Worker cron fires repository_dispatch 20 min before each slot
+# (GitHub's own scheduler can run late). The schedule below is a backup 5 min after each slot;
+# runs are idempotent, so a backup that finds the pool built and delivered just exits.
+on:
+  repository_dispatch:
+    types: [digest]
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Which job to run"
+        type: choice
+        options: [research, crypto, launches, wrap, daily]
+        required: true
+      no_wait:
+        description: "Send immediately (don't wait for slot time)"
+        type: boolean
+        default: true
+  schedule:
+    - cron: "35 1 * * *"   # research backup  (07:05 IST)
+    - cron: "35 6 * * *"   # crypto backup    (12:05 IST)
+    - cron: "35 11 * * *"  # launches backup  (17:05 IST)
+    - cron: "35 16 * * *"  # wrap backup      (22:05 IST)
+    - cron: "45 5 * * *"   # daily backup     (11:15 IST)
+
+concurrency:
+  group: digest  # one at a time: a backup run queues behind the primary and finds everything delivered
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Run job
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          INTERNAL_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
+          OWNER_TG_ID: ${{ secrets.OWNER_TG_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
+          CRYPTOPANIC_TOKEN: ${{ secrets.CRYPTOPANIC_TOKEN }}
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          INPUT_JOB: ${{ inputs.job }}
+          INPUT_NO_WAIT: ${{ inputs.no_wait }}
+          DISPATCH_JOB: ${{ github.event.client_payload.job }}
+        run: |
+          case "$EVENT_NAME" in
+            schedule)          exec npx tsx src/job/run.ts --cron "$SCHEDULE" --no-wait ;;
+            workflow_dispatch) JOB="$INPUT_JOB"; [ "$INPUT_NO_WAIT" = "true" ] && FLAGS="--no-wait" ;;
+            *)                 JOB="$DISPATCH_JOB" ;;
+          esac
+          case "$JOB" in research|crypto|launches|wrap|daily) ;; *) echo "invalid job: $JOB"; exit 1 ;; esac
+          npx tsx src/job/run.ts "$JOB" ${FLAGS:-}
+
+  test:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck && npm test
