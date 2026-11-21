@@ -20,6 +20,7 @@ export function signalScore(s: Story): number {
   if (d.tvl_change_7d != null) score += Math.min(2, Math.abs(d.tvl_change_7d) / 30);
   if (d.price_change_24h != null) score += Math.min(2, Math.abs(d.price_change_24h) / 10);
   if (d.code_url && s.type === "paper") score += 0.5;
+  if (d.curated) score += 1; // research-blog post: a lab chose to write it up
   const ageH = (Date.now() - Date.parse(s.items[0].published_at)) / 3_600_000;
   if (ageH > 48) score -= Math.min(1.5, (ageH - 48) / 48);
   return Math.max(0, Math.min(10, +score.toFixed(2)));

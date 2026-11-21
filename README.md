@@ -24,12 +24,12 @@ It runs entirely on free tiers.
                                                           enrich → AI write → validate → store → send
                                                                 │  /internal/* (shared key)
  Telegram ──webhook──▶ Cloudflare Worker (src/worker) ◀────────┘
-                        onboarding, commands, buttons, detail cards, feedback, /ask
+                        onboarding, commands, buttons, detail cards, feedback
                                    │
                               Cloudflare D1 (migrations/)
 ```
 
-- `src/shared` — config (topics, slots, roles), ranking (`user_score = AI_score × (1 + weight/10)`), Telegram HTML rendering, AI client (Gemini → retry → Groq → code-only fallback)
+- `src/shared` — config (topics, slots, roles), ranking (`user_score = AI_score × (1 + weight/10)`), Telegram HTML rendering, AI client (Claude Haiku 5.5 with a monthly budget guard → Gemini → Groq → code-only fallback)
 - `src/worker` — webhook bot + authenticated internal API for the job
 - `src/job` — the digest pipeline; one module per source in `src/job/connectors`, feed lists in `src/job/sources.ts`
 - `migrations` — D1 schema
@@ -51,8 +51,10 @@ npm test                           # unit tests
 ```
 
 The bot works without any AI key: digests fall back to source headlines plus a note. Add
-`GEMINI_API_KEY` (free at aistudio.google.com) and optionally `GROQ_API_KEY` for AI summaries, judging,
-clustering embeddings, "Explain simply" and `/ask`.
+`ANTHROPIC_API_KEY` for AI ranking, summaries and the Daily Wrap (Claude Haiku 5.5, capped by
+`CLAUDE_MONTHLY_BUDGET_USD`, default $1 — usage is logged per run and tracked per month). Optional
+`GEMINI_API_KEY` (free) also enables clustering embeddings and acts, with `GROQ_API_KEY`, as a free
+fallback when Claude fails or the budget is spent. The Telegram bot itself makes no AI calls.
 
 ## Deploy (all free tiers)
 
@@ -62,21 +64,21 @@ clustering embeddings, "Explain simply" and `/ask`.
    npx wrangler d1 create nodeneuron          # paste database_id into wrangler.toml
    npm run db:migrate                          # remote tables
    # set GITHUB_REPO_URL / GITHUB_DISPATCH_REPO in wrangler.toml, then:
-   for s in TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET INTERNAL_API_KEY OWNER_TG_ID GITHUB_DISPATCH_TOKEN GEMINI_API_KEY GROQ_API_KEY; do npx wrangler secret put $s; done
+   for s in TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET INTERNAL_API_KEY OWNER_TG_ID GITHUB_DISPATCH_TOKEN; do npx wrangler secret put $s; done
    npm run deploy
    ```
    `GITHUB_DISPATCH_TOKEN` is a fine-grained PAT with **Contents: read & write** on this repo only (needed for `repository_dispatch`).
 2. **Telegram:** `WORKER_URL=https://nodeneuron-bot.<you>.workers.dev npm run setup:telegram` sets the webhook (with secret header), command menu, name and descriptions.
 3. **GitHub:** push this repo as **public** (Actions are free on public repos) and add these repository secrets:
-   `TELEGRAM_BOT_TOKEN, WORKER_URL, INTERNAL_API_KEY, OWNER_TG_ID, GEMINI_API_KEY, GROQ_API_KEY` plus optional
-   `SEMANTIC_SCHOLAR_API_KEY, CRYPTOPANIC_TOKEN, COINGECKO_API_KEY`.
+   `TELEGRAM_BOT_TOKEN, WORKER_URL, INTERNAL_API_KEY, OWNER_TG_ID, ANTHROPIC_API_KEY` (optionally `GEMINI_API_KEY`, `GROQ_API_KEY` as free fallbacks) plus optional
+   `SEMANTIC_SCHOLAR_API_KEY, COINGECKO_API_KEY`.
 4. Run **Actions → digest → Run workflow** with each job once to check, then let the crons take over.
 
 Your Telegram user ID (for `OWNER_TG_ID`, which unlocks `/admin` and alerts) is shown by bots like @userinfobot.
 
 ## Commands
 
-`/start` setup · `/today` latest digest · `/topics` · `/settings` · `/saved` · `/ask <question>` · `/feedback <text>` · `/pause` · `/resume` · `/help` · `/deleteme` · `/admin` (owner)
+`/start` setup · `/today` latest digest · `/topics` · `/settings` · `/saved` · `/feedback <text>` · `/pause` · `/resume` · `/help` · `/deleteme` · `/admin` (owner)
 
 ## Privacy & content rules
 

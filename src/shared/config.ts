@@ -64,7 +64,6 @@ export const DEFAULT_TOPIC_WEIGHT = 10;
 export const MAX_WEIGHT = 20;
 export const MIN_WEIGHT = 0;
 export const MAX_PER_TOPIC = 3;
-export const ASK_DAILY_LIMIT = 10;
 export const POOL_SIZE = 25;
 
 /** Weight deltas (PRD § Feedback) */

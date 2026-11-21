@@ -45,6 +45,8 @@ jobs:
           WORKER_URL: ${{ secrets.WORKER_URL }}
           INTERNAL_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
           OWNER_TG_ID: ${{ secrets.OWNER_TG_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_MONTHLY_BUDGET_USD: "1"
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}

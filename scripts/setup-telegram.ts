@@ -21,7 +21,6 @@ const commands = [
   ["topics", "Choose your topics"],
   ["settings", "Depth, slots, role"],
   ["saved", "Your saved items"],
-  ["ask", "Ask about recent items (10 a day)"],
   ["feedback", "Report a problem or suggest an idea"],
   ["pause", "Pause digests"],
   ["resume", "Resume digests"],

@@ -1,15 +1,14 @@
 import {
-  ASK_DAILY_LIMIT, ALL_SLOTS_MASK, BOT_NAME, ROLES, SIGNAL_DELTA, SLOTS, TAGLINE, TOPICS, TOPIC_IDS,
+  ALL_SLOTS_MASK, BOT_NAME, ROLES, SIGNAL_DELTA, SLOTS, TAGLINE, TOPICS, TOPIC_IDS,
   istDate, topicLabel, type RoleId,
 } from "../shared/config";
-import { aiConfigured, complete, type AIEnv } from "../shared/ai";
 import { isWildcardSlot, rankForUser } from "../shared/rank";
 import { esc, helpText, link, renderDetail, renderDigest, type InlineButton, type Rendered } from "../shared/render";
 import type { PoolItem } from "../shared/types";
 import { DB, now, type UserRow } from "./db";
 import { Telegram, TelegramError } from "./tg";
 
-export interface Env extends AIEnv {
+export interface Env {
   DB: D1Database;
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_WEBHOOK_SECRET: string;
@@ -173,7 +172,7 @@ async function onMessage(c: Ctx, msg: any) {
   const m = text.match(/^\/([a-z_]+)(?:@\w+)?\s*([\s\S]*)$/i);
   if (!m) {
     if (u.status === "onboarding") return void (await c.tg.send(id, "Tap /start to finish setup — it takes 30 seconds."));
-    return void (await c.tg.send(id, "I work with buttons and commands 🙂 Try /today for the latest briefing, /ask &lt;question&gt; to ask about recent items, or /help."));
+    return void (await c.tg.send(id, "I work with buttons and commands 🙂 Try /today for the latest briefing, /topics to tune it, or /help."));
   }
   const cmd = m[1].toLowerCase();
   const arg = m[2].trim();
@@ -203,8 +202,6 @@ async function onMessage(c: Ctx, msg: any) {
       return void (await c.tg.send(id, `▶️ Welcome back! Next up: ${nextSlotText(u.slots || ALL_SLOTS_MASK)}.`));
     case "saved":
       return cmdSaved(c, id);
-    case "ask":
-      return cmdAsk(c, id, arg);
     case "feedback":
       if (!arg) return void (await c.tg.send(id, "Send it like this:\n<code>/feedback the crypto brief has too many Solana items</code>"));
       await c.db.addFeedback(id, arg);
@@ -228,44 +225,6 @@ async function cmdSaved(c: Ctx, id: number) {
   items.forEach((it, i) => lines.push(`${i + 1}. ${it.source_urls[0] ? link(it.source_urls[0], it.title) : esc(it.title)}`));
   lines.push("", "Tap a number for the detail card 👇");
   await c.tg.send(id, { text: lines.join("\n"), reply_markup: kb(chunk(items.map((it, i) => cb(`${i + 1}`, `d:${it.item_id}`)), 5)) });
-}
-
-const TUTOR_SYSTEM = `You are ${BOT_NAME}'s tutor for students and researchers.
-Answer ONLY from the numbered items supplied. If they don't contain the answer, say you haven't covered that in recent briefings.
-Use plain language, at most 120 words, plain text (no markdown). Refer to items as [n].
-Never give financial advice, trading signals or price predictions.`;
-
-function itemsContext(items: PoolItem[]): string {
-  return items
-    .map((it, i) => `[${i + 1}] ${it.title}\n${it.summary_long || it.summary_short}\n${it.data.tldr ?? ""}\nSource: ${it.source_urls[0] ?? ""}`)
-    .join("\n\n");
-}
-
-/** Atomically reserves one of today's asks (counts failed AI calls too). Returns the row id, or null if over the limit. */
-async function reserveAsk(c: Ctx, id: number, question: string): Promise<number | null> {
-  const rowId = await c.db.reserveAsk(id, question, ASK_DAILY_LIMIT);
-  if (rowId != null) return rowId;
-  await c.tg.send(id, `You've used today's ${ASK_DAILY_LIMIT} questions — they refresh in 24 hours. 🙏`);
-  return null;
-}
-
-async function cmdAsk(c: Ctx, id: number, q: string) {
-  if (!q) return void (await c.tg.send(id, "Ask about anything from recent briefings, e.g.\n<code>/ask what is restaking?</code>"));
-  if (!aiConfigured(c.env)) return void (await c.tg.send(id, "Q&amp;A isn't switched on yet — check back soon."));
-  const askId = await reserveAsk(c, id, q);
-  if (askId == null) return;
-  await c.tg.call("sendChatAction", { chat_id: id, action: "typing" }).catch(() => {});
-  const items = await c.db.recentItems(3, 30);
-  let answer: string;
-  try {
-    answer = await complete(c.env, { system: TUTOR_SYSTEM, prompt: `Items:\n${itemsContext(items)}\n\nQuestion: ${q.slice(0, 500)}`, maxTokens: 600 });
-  } catch {
-    return void (await c.tg.send(id, "⚠️ The AI is busy right now — please try again in a few minutes."));
-  }
-  await c.db.answerAsk(askId, answer);
-  const cited = [...new Set([...answer.matchAll(/\[(\d+)\]/g)].map((m) => +m[1]))].filter((n) => items[n - 1]).slice(0, 5);
-  const refs = cited.map((n) => `[${n}] ${link(items[n - 1].source_urls[0] ?? "", items[n - 1].title)}`);
-  await c.tg.send(id, `💬 ${esc(answer.trim())}${refs.length ? `\n\n${refs.join("\n")}` : ""}`);
 }
 
 async function cmdAdmin(c: Ctx, id: number) {
@@ -416,27 +375,11 @@ async function onCallback(c: Ctx, q: any) {
       return void (await c.tg.answer(q.id, `Got it, ${more ? "more" : "less"} ${topicLabel(item.topic)} 👌`));
     }
 
-    case "x": { // explain simply
+    case "x": { // explain simply — pre-written by the digest job, no AI call per tap
       const item = await c.db.getItem(Number(b));
       if (!item) return void (await c.tg.answer(q.id, "That item has expired.", true));
-      await c.tg.answer(q.id, "🧒 Explaining…");
-      if (!aiConfigured(c.env)) {
-        return void (await c.tg.send(chatId, `🧒 <b>${esc(item.title)}</b>\n\n${esc(item.simple_words || item.summary_short)}`, { reply_parameters: msgId ? { message_id: msgId } : undefined }));
-      }
-      const askId = await reserveAsk(c, id, `explain:${item.item_id}`);
-      if (askId == null) return;
-      let text: string;
-      try {
-        text = await complete(c.env, {
-          system: TUTOR_SYSTEM,
-          prompt: `Items:\n${itemsContext([item])}\n\nExplain item [1] to a curious first-year student: what it is, why anyone cares, and one analogy. Max 100 words.`,
-          maxTokens: 500,
-        });
-      } catch {
-        text = item.simple_words || item.summary_short;
-      }
-      await c.db.answerAsk(askId, text);
-      return void (await c.tg.send(chatId, `🧒 <b>In simple words</b>\n\n${esc(text.replace(/\[1\]/g, "").trim())}`, { reply_parameters: msgId ? { message_id: msgId } : undefined }));
+      await c.tg.answer(q.id);
+      return void (await c.tg.send(chatId, `🧒 <b>In simple words</b>\n\n${esc(item.simple_words || item.summary_long || item.summary_short)}`, { reply_parameters: msgId ? { message_id: msgId } : undefined }));
     }
 
     case "du":

@@ -20,6 +20,14 @@ function corpus(s: Story): string {
   return `${s.title} ${s.text} ${s.urls.join(" ")} ${s.data.tldr ?? ""} ${s.data.model_size ?? ""} ${s.data.version ?? ""} ${nums.join(" ")} ${s.sources.length}`.replace(/,(\d{3})/g, "$1");
 }
 
+/** Trim to max chars, ending on a full sentence when one ends past 60% of the limit; else cut at a word. */
+function fit(t: string, max: number): string {
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "), /[.!?]$/.test(cut) ? cut.length - 1 : -1);
+  return end > max * 0.6 ? cut.slice(0, end + 1) : truncate(t, max);
+}
+
 /** Step 10 — every item has a URL, numbers match supplied data, lengths hold, no advice language. Failures are dropped. */
 export function validate(s: Story, w: Written | undefined): { item?: NewPoolItem; reason?: string } {
   if (!s.urls.length) return { reason: "no url" };
@@ -42,7 +50,7 @@ export function validate(s: Story, w: Written | undefined): { item?: NewPoolItem
 
   for (const [k, max] of Object.entries(LIMITS) as [keyof typeof LIMITS, number][]) {
     if (fields[k].length > max * 1.5) return { reason: `${k} too long` };
-    fields[k] = truncate(fields[k], max);
+    fields[k] = fit(fields[k], max);
   }
 
   const urls = s.urls.includes(w.source_url) ? [w.source_url, ...s.urls.filter((u) => u !== w.source_url)] : s.urls;

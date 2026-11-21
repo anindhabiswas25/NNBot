@@ -67,7 +67,7 @@ export function feedConnector(feed: Feed, slot: SlotKey, type: RawItem["type"]):
           published_at: e.published,
           type,
           trust: feed.trust,
-          data: { lab: type === "launch" && feed.trust === 1 ? feed.name : undefined, published: e.published },
+          data: { lab: type === "launch" && feed.trust === 1 ? feed.name : undefined, curated: type === "paper" || undefined, published: e.published },
         }));
     },
   };

@@ -22,6 +22,21 @@ export const LAB_FEEDS: Feed[] = [
   { name: "Simon Willison", url: "https://simonwillison.net/atom/everything/", trust: 2 },
 ];
 
+/** Research blogs → Research slot (as papers). Each checked live on 2026-11-22. */
+export const RESEARCH_FEEDS: Feed[] = [
+  { name: "Google Research", url: "https://research.google/blog/rss/", trust: 1 },
+  { name: "Apple ML Research", url: "https://machinelearning.apple.com/rss.xml", trust: 1 },
+  { name: "CMU ML Blog", url: "https://blog.ml.cmu.edu/feed/", trust: 1 },
+  { name: "MIT News AI", url: "https://news.mit.edu/rss/topic/artificial-intelligence2", trust: 2 },
+  { name: "Sebastian Raschka", url: "https://magazine.sebastianraschka.com/feed", trust: 2 },
+  { name: "Lil'Log", url: "https://lilianweng.github.io/index.xml", trust: 2 },
+  // blockchain research
+  { name: "a16z crypto", url: "https://a16zcrypto.com/feed/", trust: 1 },
+  { name: "Vitalik Buterin", url: "https://vitalik.eth.limo/feed.xml", trust: 1 },
+  { name: "Flashbots", url: "https://writings.flashbots.net/rss.xml", trust: 1 },
+  { name: "Ethresear.ch", url: "https://ethresear.ch/latest.rss", trust: 3 },
+];
+
 /** Crypto outlets → Crypto Brief slot. */
 export const CRYPTO_FEEDS: Feed[] = [
   { name: "CoinDesk", url: "https://www.coindesk.com/arc/outboundfeeds/rss/", trust: 2 },
@@ -34,6 +49,10 @@ export const CRYPTO_FEEDS: Feed[] = [
   { name: "CryptoSlate", url: "https://cryptoslate.com/feed/", trust: 2 },
   { name: "Crypto Briefing", url: "https://cryptobriefing.com/feed/", trust: 3 },
   { name: "Ethereum Foundation", url: "https://blog.ethereum.org/feed.xml", trust: 1 },
+  // free replacements for CryptoPanic (paid)
+  { name: "Unchained", url: "https://unchainedcrypto.com/feed/", trust: 2 },
+  { name: "Protos", url: "https://protos.com/feed/", trust: 2 },
+  { name: "Rekt News", url: "https://rekt.news/rss/feed.xml", trust: 2 },
 ];
 
 /** GitHub repos whose releases count as AI launches. */

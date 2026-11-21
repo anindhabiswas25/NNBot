@@ -29,6 +29,8 @@ export interface ItemData {
   hn_comments?: number;
   hn_url?: string;
   version?: string;
+  /** From a hand-picked research blog (editorial selection is itself a signal). */
+  curated?: boolean;
 }
 
 export interface PoolItem {

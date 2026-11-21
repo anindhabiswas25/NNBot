@@ -213,7 +213,6 @@ export function helpText(repoUrl: string): string {
     "/topics — choose your topics",
     "/settings — depth, slots, role",
     "/saved — your saved items",
-    "/ask &lt;question&gt; — ask about recent items (10/day)",
     "/feedback &lt;text&gt; — report a problem or suggest an idea",
     "/pause · /resume — stop or restart digests",
     "/deleteme — erase all your data",

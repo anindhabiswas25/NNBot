@@ -18,10 +18,8 @@ migrations_dir = "migrations"
 GITHUB_REPO_URL = "https://github.com/anindhabiswas25/NNBot"
 # owner/repo that the cron triggers via repository_dispatch
 GITHUB_DISPATCH_REPO = "anindhabiswas25/NNBot"
-GEMINI_MODEL = "gemini-3.8-flash"
-GEMINI_LITE_MODEL = "gemini-3.5-flash-lite"
-GROQ_MODEL = "openai/gpt-oss-120b"
 
 # Secrets (set with `wrangler secret put NAME`, or .dev.vars locally):
 #   TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, INTERNAL_API_KEY, OWNER_TG_ID,
-#   GITHUB_DISPATCH_TOKEN, GEMINI_API_KEY, GROQ_API_KEY
+#   GITHUB_DISPATCH_TOKEN
+# (The Worker makes no AI calls; AI keys live only in GitHub Actions secrets.)

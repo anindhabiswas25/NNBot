@@ -9,7 +9,7 @@
  * --only        send only to this user (testing against a real DB)
  * --no-wait     send immediately instead of waiting for the slot time
  */
-import { aiConfigured } from "../shared/ai";
+import { aiConfigured, initBudget, runSpendUsd, usageReport } from "../shared/ai";
 import { BOT_NAME, POOL_SIZE, SLOTS, TOPICS, istDate, slotByKey, slotSendTime, topicLabel } from "../shared/config";
 import { renderDigest } from "../shared/render";
 import { rankForUser } from "../shared/rank";
@@ -18,7 +18,7 @@ import { Telegram } from "../worker/tg";
 import { Api } from "./api";
 import { conceptOfDay } from "./concepts";
 import { connectorsFor } from "./connectors";
-import { connectStories, judgeStories, sortFeedback, tagStories, writeStories, type Written } from "./pipeline/ai";
+import { connectStories, rankStories, sortFeedback, writeStories, type Written } from "./pipeline/ai";
 import { exactDedupe, guessTopic, isJunk, normalise, urlHash } from "./pipeline/clean";
 import { cluster } from "./pipeline/cluster";
 import { enrich } from "./pipeline/enrich";
@@ -124,27 +124,22 @@ async function buildPool(slot: SlotKey): Promise<{ items: NewPoolItem[]; meta: S
   stories = stories.filter((s) => s.domain_ok);
   log(`stories: ${stories.length}`);
 
-  // Candidate cut for AI: top 80 by signal (+ a bit for keyword relevance)
+  // Candidate cut for AI: top 60 by signal (+ a bit for keyword relevance)
   let candidates = stories
     .map((s) => ({ s, k: s.signal + Math.min(2, guessTopic({ title: s.title, text: s.text }, slot).relevance * 0.3) }))
     .sort((a, b) => b.k - a.k)
-    .slice(0, 80)
+    .slice(0, 60)
     .map((x) => x.s);
 
-  // 6–7. AI tagger + judge
+  // 6–7. AI tag + judge (one call per batch). Failures only cost ranking quality:
+  // fall back to keyword topics + signal scores, still try the writer.
   let aiOk = aiConfigured(env);
   if (aiOk) {
-    // Tag/judge failures only cost ranking quality: fall back to signal scores, still try the writer.
     try {
-      await tagStories(env, candidates, slot);
+      await rankStories(env, candidates, slot);
       candidates = candidates.filter((s) => s.domain_ok);
     } catch (e) {
-      log(`AI tagger unavailable, using keyword topics: ${(e as Error).message}`);
-    }
-    try {
-      await judgeStories(env, candidates, slot);
-    } catch (e) {
-      log(`AI judge unavailable, ranking by signals: ${(e as Error).message}`);
+      log(`AI ranking unavailable, using keyword topics + signals: ${(e as Error).message}`);
     }
   }
   for (const s of candidates) s.ai_score = s.judge != null ? 0.6 * s.judge + 0.4 * s.signal : s.signal;
@@ -304,6 +299,8 @@ async function dryRun(key: SlotKey | "wrap", slot: number, date: string) {
   console.log("\n──────── pool ────────");
   for (const it of pool) console.log(`${it.ai_score.toFixed(1).padStart(5)}  [${topicLabel(it.topic)}/${it.type}] ${it.title}  ← ${it.source_urls[0]}`);
   console.log("\n──────── digest (HTML) ────────\n" + r.text + `\n\n(${r.text.length} chars)`);
+  console.log("\n──────── detail text, top 5 ────────");
+  for (const it of pool.slice(0, 5)) console.log(`\n■ ${it.title}  (${it.source_urls[0]})\n  long:   ${it.summary_long}\n  why:    ${it.why_it_matters}\n  simple: ${it.simple_words}`);
   if (failures.length) console.log(`\nsource issues:\n${failures.map((f) => ` • ${f}`).join("\n")}`);
   if (args.previewTo) {
     await sendOne(tg, new RateLimiter(1), Number(args.previewTo), r);
@@ -368,12 +365,27 @@ async function runDaily() {
   log("housekeeping done");
 }
 
+/** Claude spend is tracked per calendar month (UTC) in the Worker's state store. */
+const spendKey = () => `claude_usd:${new Date().toISOString().slice(0, 7)}`;
+
 async function main() {
   const job = args.job;
   if (!job) throw new Error("usage: run.ts <research|crypto|launches|wrap|daily> [--dry-run] [--no-wait]");
-  if (job === "daily") return runDaily();
-  if (!["research", "crypto", "launches", "wrap"].includes(job)) throw new Error(`unknown job ${job}`);
-  await runSlot(job as SlotKey | "wrap");
+  if (job !== "daily" && !["research", "crypto", "launches", "wrap"].includes(job)) throw new Error(`unknown job ${job}`);
+
+  const spent = api ? Number((await api.state())[spendKey()] ?? 0) || 0 : 0;
+  initBudget(env, spent);
+  try {
+    if (job === "daily") await runDaily();
+    else await runSlot(job as SlotKey | "wrap");
+  } finally {
+    log(usageReport());
+    // re-read just before writing: another job may have run in parallel
+    if (api && runSpendUsd() > 0) {
+      const latest = Number((await api.state())[spendKey()] ?? 0) || 0;
+      await api.putState({ [spendKey()]: (latest + runSpendUsd()).toFixed(6) }).catch((e) => log(`spend save failed: ${e.message}`));
+    }
+  }
 }
 
 main().catch(async (e) => {
