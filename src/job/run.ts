@@ -177,7 +177,12 @@ async function buildPool(slot: SlotKey): Promise<{ items: NewPoolItem[]; meta: S
       out.push(fallbackItem(s));
       continue;
     }
-    const v = validate(s, written.get(s.id));
+    const w = written.get(s.id);
+    if (!w) {
+      out.push(fallbackItem(s)); // writer unavailable for this batch → plain summary rather than dropping
+      continue;
+    }
+    const v = validate(s, w);
     if (v.item) out.push(v.item);
     else {
       log(`  dropped "${s.title.slice(0, 60)}": ${v.reason}`);

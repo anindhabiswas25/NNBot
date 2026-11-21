@@ -2,7 +2,7 @@ import { completeJson, type AIEnv } from "../../shared/ai";
 import { BOT_NAME, TOPICS, type TopicId } from "../../shared/config";
 import type { PoolItem } from "../../shared/types";
 import type { SlotKey, Story } from "../types";
-import { log, pool, truncate } from "../util";
+import { log, pool, sleep, truncate } from "../util";
 import { SLOT_TOPICS } from "./clean";
 
 const aiLog = (m: string) => log(m);
@@ -37,7 +37,7 @@ ${batch.map((s) => JSON.stringify({ id: s.id, title: s.title, text: truncate(s.t
       const s = stories.find((x) => x.id === t.id);
       if (!s) continue;
       if (allowed.includes(t.topic)) s.topic = t.aixcrypto && allowed.includes("aixcrypto") ? "aixcrypto" : t.topic;
-      if (["paper", "launch", "news", "data"].includes(t.type) && s.type !== "data") s.type = t.type;
+      // type comes from the connector (arXiv → paper, HF/GitHub → launch …); the tagger doesn't override it
       s.difficulty = t.difficulty;
       s.domain_ok = t.relevant !== false;
     }
@@ -102,11 +102,14 @@ export async function writeStories(env: AIEnv, stories: Story[]): Promise<Map<nu
   const batches: Story[][] = [];
   for (let i = 0; i < stories.length; i += 5) batches.push(stories.slice(i, i + 5));
   await pool(batches, 1, async (batch) => {
-    const res = await completeJson<{ items: Written[] }>(
-      env,
-      {
-        system: `You write ${BOT_NAME} briefings for students and researchers. Use ONLY the supplied text and facts — if something isn't there, leave it out. Only use numbers that appear in the supplied text or facts. Plain, friendly English; no hype words (revolutionary, game-changing, huge). ${RULES}`,
-        prompt: `For each story write:
+    let res: { items: Written[] } | undefined;
+    for (let attempt = 0; attempt < 2 && !res; attempt++) {
+      try {
+        res = await completeJson<{ items: Written[] }>(
+        env,
+        {
+          system: `You write ${BOT_NAME} briefings for students and researchers. Use ONLY the supplied text and facts — if something isn't there, leave it out. Only use numbers that appear in the supplied text or facts. Plain, friendly English; no hype words (revolutionary, game-changing, huge). ${RULES}`,
+          prompt: `For each story write:
 - headline: ≤ 80 chars, specific, no clickbait
 - summary_short: 1 line, ≤ 140 chars
 - summary_long: 2 lines, ≤ 300 chars
@@ -117,9 +120,15 @@ Return JSON {"items":[{"id":0,"headline":"","summary_short":"","summary_long":""
 
 Stories:
 ${batch.map((s) => JSON.stringify({ id: s.id, type: s.type, title: s.title, urls: s.urls.slice(0, 4), facts: compactFacts(s), tldr: s.data.tldr, text: truncate(s.text, 900) })).join("\n\n")}`,
-      },
-      aiLog,
-    );
+        },
+        aiLog,
+      );
+      } catch (e) {
+        aiLog(`writer batch failed (attempt ${attempt + 1}): ${(e as Error).message}`);
+        if (attempt === 0) await sleep(65_000); // Groq's free tier is limited per minute
+      }
+    }
+    if (!res) return; // caller uses code-only summaries for these stories
     for (const w of res.items ?? []) if (typeof w.id === "number") out.set(w.id, w);
   });
   return out;
