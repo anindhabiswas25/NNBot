@@ -1,4 +1,6 @@
-import { lookup } from "node:dns/promises";
+import { lookup as dnsLookup, type LookupAddress, type LookupOptions } from "node:dns";
+import http from "node:http";
+import https from "node:https";
 import { isIP } from "node:net";
 import type { Story } from "../types";
 import { UA, log, pool, stripHtml, truncate } from "../util";
@@ -43,75 +45,107 @@ function firstParagraphs(html: string, max = 900): string {
 
 // ───────────── safe fetch: story links are user-submitted (HN), so never reach internal addresses ─────────────
 
-/** True for loopback, private, link-local (cloud metadata), CGNAT, unique-local and other non-public IPs. */
+const v4ToInt = (ip: string) => ip.split(".").reduce((n, o) => n * 256 + Number(o), 0);
+const V4_BLOCKED: [string, number][] = [
+  ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12],
+  ["192.0.0.0", 24], ["192.0.2.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["198.51.100.0", 24], ["203.0.113.0", 24], ["224.0.0.0", 3],
+];
+
+/** Expand any IPv6 text form (incl. ::, embedded IPv4) to 8 16-bit groups. */
+function v6Groups(ip: string): number[] | null {
+  let s = ip.toLowerCase().split("%")[0];
+  const v4 = s.match(/(\d+\.\d+\.\d+\.\d+)$/);
+  if (v4) {
+    const n = v4ToInt(v4[1]);
+    s = s.slice(0, -v4[1].length) + `${(n >>> 16).toString(16)}:${(n & 0xffff).toString(16)}`;
+  }
+  const [head, tail] = s.split("::");
+  const h = head ? head.split(":") : [];
+  const t = tail !== undefined && tail ? tail.split(":") : [];
+  const groups = tail === undefined ? h : [...h, ...Array(8 - h.length - t.length).fill("0"), ...t];
+  if (groups.length !== 8) return null;
+  const nums = groups.map((g) => parseInt(g, 16));
+  return nums.every((n) => n >= 0 && n <= 0xffff) ? nums : null;
+}
+
+/**
+ * True unless the address is plainly public. IPv4: not in any reserved/private/link-local/CGNAT range.
+ * IPv6: only global unicast 2000::/3 is allowed, minus 6to4 (2002::/16), Teredo (2001::/32) and documentation
+ * (2001:db8::/32) — so every IPv4-mapped/compatible/NAT64 form is rejected however it is written.
+ */
 export function isPrivateIp(ip: string): boolean {
   if (isIP(ip) === 4) {
-    const [a, b] = ip.split(".").map(Number);
-    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224;
+    const n = v4ToInt(ip);
+    return V4_BLOCKED.some(([base, bits]) => n >>> (32 - bits) === v4ToInt(base) >>> (32 - bits));
   }
-  const v6 = ip.toLowerCase();
-  const mapped = v6.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isPrivateIp(mapped[1]);
-  return v6 === "::" || v6 === "::1" || /^f[cd]/.test(v6) || /^fe[89ab]/.test(v6) || /^ff/.test(v6);
+  if (isIP(ip) !== 6) return true;
+  const g = v6Groups(ip);
+  if (!g) return true;
+  if ((g[0] & 0xe000) !== 0x2000) return true; // not global unicast
+  return g[0] === 0x2002 || (g[0] === 0x2001 && (g[1] === 0 || g[1] === 0xdb8));
 }
 
-async function isPublicHttpUrl(raw: string): Promise<boolean> {
-  let u: URL;
-  try {
-    u = new URL(raw);
-  } catch {
-    return false;
-  }
-  if (u.protocol !== "https:" && u.protocol !== "http:") return false;
-  if (u.port && !["80", "443"].includes(u.port)) return false;
-  const host = u.hostname.replace(/^\[|\]$/g, "");
-  try {
-    const addrs = isIP(host) ? [{ address: host }] : await lookup(host, { all: true });
-    return addrs.length > 0 && addrs.every((a) => !isPrivateIp(a.address));
-  } catch {
-    return false;
-  }
+/** dns.lookup replacement used *by the socket itself*: the address actually connected to is the one checked. */
+function guardedLookup(host: string, opts: LookupOptions, cb: (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void) {
+  dnsLookup(host, { ...opts, all: true }, (err, addrs) => {
+    if (err) return cb(err, "");
+    const list = addrs as LookupAddress[];
+    if (!list.length || list.some((a) => isPrivateIp(a.address))) return cb(Object.assign(new Error(`blocked non-public address for ${host}`), { code: "EBLOCKED" }), "");
+    if (opts.all) return cb(null, list);
+    cb(null, list[0].address, list[0].family);
+  });
 }
 
-/** GET with every hop (including redirects) checked to be a public http(s) address; ≤ 3 redirects. */
-async function safeGet(url: string): Promise<Response | null> {
-  let current = url;
-  for (let hop = 0; hop <= 3; hop++) {
-    if (!(await isPublicHttpUrl(current))) return null;
-    const res = await fetch(current, {
-      redirect: "manual",
-      headers: { "user-agent": UA, accept: "text/html,application/xhtml+xml" },
-      signal: AbortSignal.timeout(8000),
+interface Page { status: number; location?: string; contentType: string; body: string }
+
+/** One GET, no redirects followed, body capped at `max` bytes, 8 s total. */
+function getOnce(url: URL, max = 500_000): Promise<Page> {
+  const mod = url.protocol === "https:" ? https : http;
+  return new Promise((resolve, reject) => {
+    const req = mod.get(url, { lookup: guardedLookup as any, headers: { "user-agent": UA, accept: "text/html,application/xhtml+xml" }, timeout: 8000 }, (res) => {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      const finish = () => resolve({ status: res.statusCode ?? 0, location: res.headers.location, contentType: String(res.headers["content-type"] ?? ""), body: Buffer.concat(chunks).subarray(0, max).toString("utf8") });
+      if ((res.statusCode ?? 0) >= 300 || !String(res.headers["content-type"] ?? "").includes("html")) {
+        res.destroy();
+        return finish();
+      }
+      res.on("data", (c: Buffer) => {
+        chunks.push(c);
+        size += c.length;
+        if (size >= max) {
+          res.destroy(); // stop reading a huge or endless page
+          finish();
+        }
+      });
+      res.on("end", finish);
+      res.on("error", reject);
     });
-    if (res.status >= 300 && res.status < 400) {
-      const loc = res.headers.get("location");
-      if (!loc) return null;
-      current = new URL(loc, current).toString();
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    req.on("error", reject);
+  });
+}
+
+/** GET following ≤ 3 redirects; every hop must be http(s) on a default port, and every socket is address-checked. */
+async function safeGet(raw: string): Promise<Page | null> {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  for (let hop = 0; hop <= 3; hop++) {
+    if ((url.protocol !== "https:" && url.protocol !== "http:") || (url.port && !["80", "443"].includes(url.port))) return null;
+    if (isIP(url.hostname.replace(/^\[|\]$/g, "")) && isPrivateIp(url.hostname.replace(/^\[|\]$/g, ""))) return null; // literal IPs skip DNS
+    const page = await getOnce(url);
+    if (page.status >= 300 && page.status < 400) {
+      if (!page.location) return null;
+      url = new URL(page.location, url);
       continue;
     }
-    return res.ok ? res : null;
+    return page.status >= 200 && page.status < 300 ? page : null;
   }
   return null;
-}
-
-/** Read at most `max` bytes of a body, then cancel the stream (a huge or endless page can't stall the job). */
-async function readCapped(res: Response, max = 500_000): Promise<string> {
-  if (!res.body) return "";
-  const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    while (size < max) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      size += value.byteLength;
-    }
-  } finally {
-    await reader.cancel().catch(() => {});
-  }
-  return new TextDecoder().decode(Buffer.concat(chunks).subarray(0, max));
 }
 
 /** Exposed for tests. */
@@ -131,9 +165,9 @@ export async function describeThin(stories: Story[]): Promise<void> {
   let ok = 0;
   await pool(thin, 8, async (s) => {
     try {
-      const res = await safeGet(s.urls[0]);
-      if (!res || !(res.headers.get("content-type") ?? "").includes("html")) return;
-      const text = pageDescription(await readCapped(res));
+      const page = await safeGet(s.urls[0]);
+      if (!page || !page.contentType.includes("html")) return;
+      const text = pageDescription(page.body);
       if (text.length >= 60) {
         s.text = text;
         ok++;
