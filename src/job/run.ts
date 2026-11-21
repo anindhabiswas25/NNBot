@@ -21,6 +21,7 @@ import { connectorsFor } from "./connectors";
 import { connectStories, rankStories, sortFeedback, writeStories, type Written } from "./pipeline/ai";
 import { exactDedupe, guessTopic, isJunk, normalise, urlHash } from "./pipeline/clean";
 import { cluster } from "./pipeline/cluster";
+import { describeThin } from "./pipeline/describe";
 import { enrich } from "./pipeline/enrich";
 import { signalScore } from "./pipeline/signals";
 import { fallbackItem, validate } from "./pipeline/validate";
@@ -130,6 +131,9 @@ async function buildPool(slot: SlotKey): Promise<{ items: NewPoolItem[]; meta: S
     .sort((a, b) => b.k - a.k)
     .slice(0, 60)
     .map((x) => x.s);
+
+  // Title-only link posts (mostly HN): fetch the linked page's own description first
+  await describeThin(candidates);
 
   // 6–7. AI tag + judge (one call per batch). Failures only cost ranking quality:
   // fall back to keyword topics + signal scores, still try the writer.

@@ -91,6 +91,7 @@ export const JUNK_PATTERNS = [
   /\bairdrop (guide|checker|how to claim)\b/i,
   /\bprice analysis\b/i,
   /\bwhale alert\b/i,
+  /\b(uncensored|abliterated|nsfw)\b/i, // de-safetied model uploads: not for a student briefing
 ];
 
 /** DefiLlama thresholds */

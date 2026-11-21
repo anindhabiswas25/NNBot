@@ -125,3 +125,20 @@ test("rank: one website fills at most limit − 2 items when others exist", () =
   // only arXiv available → still a full briefing
   assert.equal(rankForUser(pool.slice(0, 10), user(Object.fromEntries(["llms", "vision", "robotics", "agents"].map((t) => [t, 10])))).length, 7);
 });
+
+test("page description: meta description + first real paragraph, no repeats", async () => {
+  const { pageDescription } = await import("../src/job/pipeline/describe");
+  const html = `<html><head><meta property="og:description" content="Signal explains how AI agents in mobile OSes can read private chats."></head>
+    <body><nav><p>Home About Blog Contact and a lot of other navigation text that is long enough to pass</p></nav>
+    <p>By Jane</p><p>Operating systems are adding AI agents that can see everything on screen, including end-to-end encrypted messages, and Signal is asking platforms for an opt-out.</p></body></html>`;
+  const d = pageDescription(html);
+  assert.match(d, /^Signal explains/);
+  assert.match(d, /opt-out/);
+  assert.doesNotMatch(d, /navigation|By Jane/);
+});
+
+test("junk: de-safetied model uploads are filtered", () => {
+  const base: RawItem = { title: "OpenUncensored releases Inkling-2-Mini-Uncensored", text: "", url: "https://huggingface.co/x/y", source: "HF", published_at: new Date().toISOString(), type: "launch", trust: 2, data: {} };
+  assert.ok(isJunk(base));
+  assert.equal(isJunk({ ...base, title: "A study of jailbreak robustness in LLM safety training" }), null);
+});
