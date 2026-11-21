@@ -98,11 +98,11 @@ function guardedLookup(host: string, opts: LookupOptions, cb: (err: NodeJS.Errno
 
 interface Page { status: number; location?: string; contentType: string; body: string }
 
-/** One GET, no redirects followed, body capped at `max` bytes, 8 s total. */
+/** One GET, no redirects followed, body capped at `max` bytes, hard 8 s total deadline (plus an idle timeout). */
 function getOnce(url: URL, max = 500_000): Promise<Page> {
   const mod = url.protocol === "https:" ? https : http;
   return new Promise((resolve, reject) => {
-    const req = mod.get(url, { lookup: guardedLookup as any, headers: { "user-agent": UA, accept: "text/html,application/xhtml+xml" }, timeout: 8000 }, (res) => {
+    const req = mod.get(url, { lookup: guardedLookup as any, headers: { "user-agent": UA, accept: "text/html,application/xhtml+xml" }, timeout: 8000, signal: AbortSignal.timeout(8000) }, (res) => {
       const chunks: Buffer[] = [];
       let size = 0;
       const finish = () => resolve({ status: res.statusCode ?? 0, location: res.headers.location, contentType: String(res.headers["content-type"] ?? ""), body: Buffer.concat(chunks).subarray(0, max).toString("utf8") });
@@ -120,6 +120,7 @@ function getOnce(url: URL, max = 500_000): Promise<Page> {
       });
       res.on("end", finish);
       res.on("error", reject);
+      res.on("aborted", () => reject(new Error("aborted")));
     });
     req.on("timeout", () => req.destroy(new Error("timeout")));
     req.on("error", reject);
