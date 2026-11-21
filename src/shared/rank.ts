@@ -9,7 +9,7 @@ export interface Ranked extends PoolItem {
 /** user_score = AI_score × (1 + topic_weight / 10), × a small role boost on item type. */
 export function userScore(item: PoolItem, user: UserPrefs): number {
   const w = user.weights[item.topic] ?? 0;
-  const boost = user.role ? ROLES[user.role].boost[item.type] ?? 1 : 1;
+  const boost = user.role && Object.hasOwn(ROLES, user.role) ? ROLES[user.role].boost[item.type] ?? 1 : 1;
   return item.ai_score * (1 + w / 10) * boost;
 }
 

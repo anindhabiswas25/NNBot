@@ -173,8 +173,22 @@ export class DB {
     return r?.n ?? 0;
   }
 
-  logAsk(id: number, q: string, a: string) {
-    return this.d1.prepare("INSERT INTO asks (tg_user_id, question, answer, created_at) VALUES (?, ?, ?, ?)").bind(id, q.slice(0, 1000), a.slice(0, 4000), now()).run();
+  /** Conditional insert: only succeeds while the user has < limit asks in the last 24 h (single statement, so no race). */
+  async reserveAsk(id: number, q: string, limit: number): Promise<number | null> {
+    const t = now();
+    const r = await this.d1
+      .prepare(
+        `INSERT INTO asks (tg_user_id, question, answer, created_at)
+         SELECT ?1, ?2, NULL, ?3 WHERE (SELECT COUNT(*) FROM asks WHERE tg_user_id = ?1 AND created_at > ?4) < ?5
+         RETURNING rowid AS id`,
+      )
+      .bind(id, q.slice(0, 1000), t, t - 86_400_000, limit)
+      .first<{ id: number }>();
+    return r?.id ?? null;
+  }
+
+  answerAsk(rowId: number, a: string) {
+    return this.d1.prepare("UPDATE asks SET answer = ? WHERE rowid = ?").bind(a.slice(0, 4000), rowId).run();
   }
 
   addFeedback(id: number, text: string) {

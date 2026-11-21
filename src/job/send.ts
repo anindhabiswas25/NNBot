@@ -52,7 +52,8 @@ export function renderFor(user: UserPrefs, slot: number, slotDate: string, poolI
     items = rankForUser(poolItems, user, { wildcard: isWildcardSlot(user, slot) });
   }
   if (!items.length) return null;
-  return { r: renderDigest(slot, slotDate, items, { depth: user.depth, simpler: user.role ? ROLES[user.role].simpler : false, meta }), items };
+  const simpler = !!user.role && Object.hasOwn(ROLES, user.role) && ROLES[user.role].simpler;
+  return { r: renderDigest(slot, slotDate, items, { depth: user.depth === "quick" ? "quick" : "detailed", simpler, meta }), items };
 }
 
 /** Step 12 — personalise and send to every active user who wants this slot and hasn't had it yet. */
@@ -66,7 +67,14 @@ export async function sendSlot(api: Api, tg: Telegram, slotDate: string, slot: n
     const deliveries: { tg_user_id: number; slot_date: string; slot: number; message_id: number; item_ids: number[] }[] = [];
     const blocked: number[] = [];
     await pool(users, 8, async (u) => {
-      const out = renderFor(u, slot, slotDate, poolItems, meta);
+      let out: ReturnType<typeof renderFor>;
+      try {
+        out = renderFor(u, slot, slotDate, poolItems, meta);
+      } catch (e) {
+        // one bad user row must never stop delivery to everyone else
+        log(`render for ${u.tg_user_id} failed: ${(e as Error).message}`);
+        return void stats.failed++;
+      }
       if (!out) return void stats.empty++;
       const res = await sendOne(tg, limiter, u.tg_user_id, out.r);
       stats[res.result]++;

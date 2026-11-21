@@ -96,7 +96,7 @@ function settingsScreen(u: UserRow): Rendered {
     text: [
       "⚙️ <b>Settings</b>",
       "",
-      `👤 Role: ${u.role ? ROLES[u.role].label : "—"}`,
+      `👤 Role: ${u.role && Object.hasOwn(ROLES, u.role) ? ROLES[u.role].label : "—"}`,
       `📚 Depth: ${u.depth === "quick" ? "⚡ Quick" : "📚 Detailed"}`,
       `🕒 Slots: ${slots}`,
       `🌐 Language: English`,
@@ -130,7 +130,8 @@ async function sendDigest(c: Ctx, u: UserRow, slotDate: string, slot: number): P
     items = rankForUser(await c.db.getPool(slotDate, slot), prefs, { wildcard: isWildcardSlot(prefs, slot) });
   }
   if (!items.length) return false;
-  const r = renderDigest(slot, slotDate, items, { depth: u.depth, simpler: u.role ? ROLES[u.role].simpler : false, meta });
+  const simpler = !!u.role && Object.hasOwn(ROLES, u.role) && ROLES[u.role].simpler;
+  const r = renderDigest(slot, slotDate, items, { depth: u.depth, simpler, meta });
   const m = await c.tg.send(u.tg_user_id, r);
   await c.db.recordDelivery(u.tg_user_id, slotDate, slot, m.message_id, items.map((i) => i.item_id));
   return true;
@@ -240,16 +241,19 @@ function itemsContext(items: PoolItem[]): string {
     .join("\n\n");
 }
 
-async function underAskLimit(c: Ctx, id: number): Promise<boolean> {
-  if ((await c.db.asksToday(id)) < ASK_DAILY_LIMIT) return true;
+/** Atomically reserves one of today's asks (counts failed AI calls too). Returns the row id, or null if over the limit. */
+async function reserveAsk(c: Ctx, id: number, question: string): Promise<number | null> {
+  const rowId = await c.db.reserveAsk(id, question, ASK_DAILY_LIMIT);
+  if (rowId != null) return rowId;
   await c.tg.send(id, `You've used today's ${ASK_DAILY_LIMIT} questions — they refresh in 24 hours. 🙏`);
-  return false;
+  return null;
 }
 
 async function cmdAsk(c: Ctx, id: number, q: string) {
   if (!q) return void (await c.tg.send(id, "Ask about anything from recent briefings, e.g.\n<code>/ask what is restaking?</code>"));
   if (!aiConfigured(c.env)) return void (await c.tg.send(id, "Q&amp;A isn't switched on yet — check back soon."));
-  if (!(await underAskLimit(c, id))) return;
+  const askId = await reserveAsk(c, id, q);
+  if (askId == null) return;
   await c.tg.call("sendChatAction", { chat_id: id, action: "typing" }).catch(() => {});
   const items = await c.db.recentItems(3, 30);
   let answer: string;
@@ -258,7 +262,7 @@ async function cmdAsk(c: Ctx, id: number, q: string) {
   } catch {
     return void (await c.tg.send(id, "⚠️ The AI is busy right now — please try again in a few minutes."));
   }
-  await c.db.logAsk(id, q, answer);
+  await c.db.answerAsk(askId, answer);
   const cited = [...new Set([...answer.matchAll(/\[(\d+)\]/g)].map((m) => +m[1]))].filter((n) => items[n - 1]).slice(0, 5);
   const refs = cited.map((n) => `[${n}] ${link(items[n - 1].source_urls[0] ?? "", items[n - 1].title)}`);
   await c.tg.send(id, `💬 ${esc(answer.trim())}${refs.length ? `\n\n${refs.join("\n")}` : ""}`);
@@ -312,8 +316,8 @@ async function onCallback(c: Ctx, q: any) {
       case "go":
         return void (await edit(roleScreen("ob")));
       case "role": {
+        if (!Object.hasOwn(ROLES, x)) return;
         const role = x as RoleId;
-        if (!ROLES[role]) return;
         if (prefix === "ob") {
           await c.db.updateUser(id, { role, depth: ROLES[role].depth });
           const w = await c.db.getWeights(id);
@@ -349,7 +353,9 @@ async function onCallback(c: Ctx, q: any) {
         await c.db.updateUser(id, { depth: u.depth === "quick" ? "detailed" : "quick" });
         return void (await edit(settingsScreen((await c.db.getUser(id))!)));
       case "s": {
-        const bit = 1 << Number(x);
+        const n = Number(x);
+        if (!SLOTS.some((s) => s.id === n)) return;
+        const bit = 1 << n;
         const slots = u.slots ^ bit;
         await c.db.updateUser(id, { slots });
         return void (await edit(slotsScreen(prefix === "ob" ? "ob" : "st", slots)));
@@ -417,7 +423,8 @@ async function onCallback(c: Ctx, q: any) {
       if (!aiConfigured(c.env)) {
         return void (await c.tg.send(chatId, `🧒 <b>${esc(item.title)}</b>\n\n${esc(item.simple_words || item.summary_short)}`, { reply_parameters: msgId ? { message_id: msgId } : undefined }));
       }
-      if (!(await underAskLimit(c, id))) return;
+      const askId = await reserveAsk(c, id, `explain:${item.item_id}`);
+      if (askId == null) return;
       let text: string;
       try {
         text = await complete(c.env, {
@@ -428,7 +435,7 @@ async function onCallback(c: Ctx, q: any) {
       } catch {
         text = item.simple_words || item.summary_short;
       }
-      await c.db.logAsk(id, `explain:${item.item_id}`, text);
+      await c.db.answerAsk(askId, text);
       return void (await c.tg.send(chatId, `🧒 <b>In simple words</b>\n\n${esc(text.replace(/\[1\]/g, "").trim())}`, { reply_parameters: msgId ? { message_id: msgId } : undefined }));
     }
 
