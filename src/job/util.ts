@@ -16,7 +16,7 @@ export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export const log = (...a: unknown[]) => console.log(`[${new Date().toISOString().slice(11, 19)}]`, ...a);
 
-const UA = "NodeNeuronBot/0.1 (research digest; +https://t.me/NodeNeuronBot)";
+export const UA = "NodeNeuronBot/0.1 (research digest; +https://t.me/NodeNeuronBot)";
 
 export async function http(url: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<Response> {
   const { timeoutMs = 30_000, ...rest } = init;
