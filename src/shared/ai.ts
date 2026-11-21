@@ -23,6 +23,24 @@ export interface AIRequest {
 
 export class AIUnavailable extends Error {}
 
+/** Models that just returned 429 are skipped for a while instead of retried on every call. */
+const cooldownUntil = new Map<string, number>();
+const COOLDOWN_MS = 10 * 60_000;
+
+/** Groq free tier: ~8k tokens per minute (prompt + max_tokens). Pace calls instead of failing. */
+const GROQ_TPM = 7500;
+const groqWindow: { at: number; tokens: number }[] = [];
+async function groqPace(tokens: number) {
+  for (;;) {
+    const now = Date.now();
+    while (groqWindow.length && now - groqWindow[0].at > 60_000) groqWindow.shift();
+    const used = groqWindow.reduce((a, w) => a + w.tokens, 0);
+    if (used + tokens <= GROQ_TPM || !groqWindow.length) break;
+    await sleep(60_000 - (now - groqWindow[0].at) + 250);
+  }
+  groqWindow.push({ at: Date.now(), tokens });
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function aiConfigured(env: AIEnv): boolean {
@@ -54,6 +72,8 @@ async function gemini(env: AIEnv, req: AIRequest, model: string): Promise<string
 }
 
 async function groq(env: AIEnv, req: AIRequest): Promise<string> {
+  const maxTokens = Math.min(req.maxTokens ?? 3000, 3000);
+  await groqPace(Math.ceil((req.system.length + req.prompt.length) / 3.5) + maxTokens);
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${env.GROQ_API_KEY}` },
@@ -61,7 +81,7 @@ async function groq(env: AIEnv, req: AIRequest): Promise<string> {
       model: env.GROQ_MODEL || "openai/gpt-oss-120b",
       temperature: req.temperature ?? 0.3,
       // free tier counts prompt + max_tokens against an 8k tokens-per-minute cap
-      max_tokens: Math.min(req.maxTokens ?? 3000, 3000),
+      max_tokens: maxTokens,
       messages: [
         { role: "system", content: req.system },
         { role: "user", content: req.prompt },
@@ -83,11 +103,14 @@ export async function complete(env: AIEnv, req: AIRequest, log: (m: string) => v
     const primary = geminiModel(env, req.tier ?? "flash");
     const other = geminiModel(env, req.tier === "lite" ? "flash" : "lite");
     for (const [attempt, model] of [primary, primary, other].entries()) {
+      if ((cooldownUntil.get(model) ?? 0) > Date.now()) continue;
       try {
         return await gemini(env, req, model);
       } catch (e) {
-        log(`[ai] gemini ${model} attempt ${attempt + 1} failed: ${(e as Error).message.split("\n")[0].slice(0, 160)}`);
-        if (attempt === 0) await sleep(3000);
+        const msg = (e as Error).message;
+        log(`[ai] gemini ${model} attempt ${attempt + 1} failed: ${msg.split("\n")[0].slice(0, 160)}`);
+        if (msg.startsWith("gemini 429")) cooldownUntil.set(model, Date.now() + COOLDOWN_MS);
+        else if (attempt === 0) await sleep(3000);
       }
     }
   }

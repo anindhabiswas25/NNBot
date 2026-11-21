@@ -32,7 +32,7 @@ Items:
 ${batch.map((s) => JSON.stringify({ id: s.id, title: s.title, text: truncate(s.text, 300), source: s.sources[0] })).join("\n")}`,
       },
       aiLog,
-    );
+    ).catch((e) => (aiLog(`tagger batch failed: ${(e as Error).message}`), { items: [] as TagOut[] }));
     for (const t of res.items ?? []) {
       const s = stories.find((x) => x.id === t.id);
       if (!s) continue;
@@ -67,7 +67,7 @@ Items:
 ${batch.map((s) => JSON.stringify({ id: s.id, title: s.title, topic: s.topic, sources: s.sources.length, facts: compactFacts(s), text: truncate(s.text, 400) })).join("\n")}`,
       },
       aiLog,
-    );
+    ).catch((e) => (aiLog(`judge batch failed: ${(e as Error).message}`), { items: [] as JudgeOut[] }));
     for (const j of res.items ?? []) {
       const s = stories.find((x) => x.id === j.id);
       if (!s) continue;

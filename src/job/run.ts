@@ -9,7 +9,7 @@
  * --only        send only to this user (testing against a real DB)
  * --no-wait     send immediately instead of waiting for the slot time
  */
-import { aiConfigured, AIUnavailable } from "../shared/ai";
+import { aiConfigured } from "../shared/ai";
 import { BOT_NAME, POOL_SIZE, SLOTS, TOPICS, istDate, slotByKey, slotSendTime, topicLabel } from "../shared/config";
 import { renderDigest } from "../shared/render";
 import { rankForUser } from "../shared/rank";
@@ -134,14 +134,17 @@ async function buildPool(slot: SlotKey): Promise<{ items: NewPoolItem[]; meta: S
   // 6–7. AI tagger + judge
   let aiOk = aiConfigured(env);
   if (aiOk) {
+    // Tag/judge failures only cost ranking quality: fall back to signal scores, still try the writer.
     try {
       await tagStories(env, candidates, slot);
       candidates = candidates.filter((s) => s.domain_ok);
+    } catch (e) {
+      log(`AI tagger unavailable, using keyword topics: ${(e as Error).message}`);
+    }
+    try {
       await judgeStories(env, candidates, slot);
     } catch (e) {
-      if (!(e instanceof AIUnavailable)) log(`AI tag/judge error: ${(e as Error).message}`);
-      aiOk = false;
-      failures.push(`AI tag/judge: ${(e as Error).message}`);
+      log(`AI judge unavailable, ranking by signals: ${(e as Error).message}`);
     }
   }
   for (const s of candidates) s.ai_score = s.judge != null ? 0.6 * s.judge + 0.4 * s.signal : s.signal;
