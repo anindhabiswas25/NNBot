@@ -112,3 +112,16 @@ test("validate: accepts supported numbers, rejects invented ones and advice", ()
   assert.match(validate(story(), w({ why_it_matters: "You should buy this token now" })).reason!, /advice/);
   assert.equal(validate(story({ urls: [] }), w()).reason, "no url");
 });
+
+test("rank: one website fills at most limit − 2 items when others exist", () => {
+  const pool = [
+    ...Array.from({ length: 10 }, (_, i) => item(100 + i, ["llms", "vision", "robotics", "agents"][i % 4], 9 - i * 0.1, { source_urls: [`https://arxiv.org/abs/${i}`] })),
+    item(200, "llms", 4, { source_urls: ["https://research.google/blog/x"] }),
+    item(201, "vision", 3, { source_urls: ["https://machinelearning.apple.com/y"] }),
+  ];
+  const r = rankForUser(pool, user(Object.fromEntries(["llms", "vision", "robotics", "agents"].map((t) => [t, 10]))));
+  assert.equal(r.length, 7);
+  assert.equal(r.filter((i) => i.source_urls[0].includes("arxiv.org")).length, 5);
+  // only arXiv available → still a full briefing
+  assert.equal(rankForUser(pool.slice(0, 10), user(Object.fromEntries(["llms", "vision", "robotics", "agents"].map((t) => [t, 10])))).length, 7);
+});

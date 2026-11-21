@@ -112,8 +112,10 @@ export class DB {
 
   /** Most recent (date, slot) that has a pool, optionally restricted to a slot bitmask. */
   async latestPoolKey(mask = 0b1111): Promise<{ slot_date: string; slot: number } | null> {
+    // Latest by schedule (date, then slot = time of day), not by build time: a rebuilt morning
+    // pool must not outrank that evening's briefing.
     const { results } = await this.d1
-      .prepare("SELECT slot_date, slot, MAX(created_at) AS c FROM items GROUP BY slot_date, slot ORDER BY slot_date DESC, c DESC LIMIT 12")
+      .prepare("SELECT DISTINCT slot_date, slot FROM items ORDER BY slot_date DESC, slot DESC LIMIT 12")
       .all<{ slot_date: string; slot: number }>();
     return results.find((r) => mask & (1 << r.slot)) ?? null;
   }

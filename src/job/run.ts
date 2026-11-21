@@ -10,8 +10,8 @@
  * --no-wait     send immediately instead of waiting for the slot time
  */
 import { aiConfigured, initBudget, runSpendUsd, usageReport } from "../shared/ai";
-import { BOT_NAME, POOL_SIZE, SLOTS, TOPICS, istDate, slotByKey, slotSendTime, topicLabel } from "../shared/config";
-import { renderDigest } from "../shared/render";
+import { BOT_NAME, POOL_MAX_PER_SITE, POOL_SIZE, SLOTS, TOPICS, istDate, slotByKey, slotSendTime, topicLabel } from "../shared/config";
+import { hostOf, renderDigest } from "../shared/render";
 import { rankForUser } from "../shared/rank";
 import type { NewPoolItem, PoolItem, SlotMeta, UserPrefs } from "../shared/types";
 import { Telegram } from "../worker/tg";
@@ -144,15 +144,25 @@ async function buildPool(slot: SlotKey): Promise<{ items: NewPoolItem[]; meta: S
   }
   for (const s of candidates) s.ai_score = s.judge != null ? 0.6 * s.judge + 0.4 * s.signal : s.signal;
 
-  // Pick top POOL_SIZE with some topic variety (≤ 8 per topic in the shared pool)
+  // Pick top POOL_SIZE with topic and source variety (≤ 8 per topic, ≤ POOL_MAX_PER_SITE per website)
   const perTopic: Record<string, number> = {};
+  const perSite: Record<string, number> = {};
   const top: Story[] = [];
-  for (const s of [...candidates].sort((a, b) => b.ai_score - a.ai_score)) {
+  const ordered = [...candidates].sort((a, b) => b.ai_score - a.ai_score);
+  for (const s of ordered) {
     if (top.length >= POOL_SIZE) break;
     if ((perTopic[s.topic] ?? 0) >= 8) continue;
+    const site = hostOf(s.urls[0] ?? "");
+    if ((perSite[site] ?? 0) >= POOL_MAX_PER_SITE) continue;
     if (s.type === "data" && top.filter((t) => t.type === "data").length >= 4) continue; // keep the brief news-led
+    perSite[site] = (perSite[site] ?? 0) + 1;
     perTopic[s.topic] = (perTopic[s.topic] ?? 0) + 1;
     top.push(s);
+  }
+  // Too few other websites today → top up from the best remaining rather than ship a short pool
+  for (const s of ordered) {
+    if (top.length >= POOL_SIZE) break;
+    if (!top.includes(s)) top.push(s);
   }
 
   // 8. enrich

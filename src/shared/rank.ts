@@ -1,4 +1,5 @@
-import { MAX_PER_TOPIC, ROLES, SLOTS } from "./config";
+import { MAX_PER_TOPIC, ROLES, SITE_RESERVED, SLOTS } from "./config";
+import { hostOf } from "./render";
 import type { PoolItem, UserPrefs } from "./types";
 
 export interface Ranked extends PoolItem {
@@ -24,7 +25,7 @@ export function isWildcardSlot(user: UserPrefs, slot: number): boolean {
 
 /**
  * Pick the user's items from the shared pool: top 5 (quick) or 7 (detailed) by user_score,
- * at most 3 per topic, plus one high-scoring wildcard from outside their topics when `wildcard`.
+ * at most 3 per topic and (limit − 2) from any one website, plus one high-scoring wildcard from outside their topics when `wildcard`.
  */
 export function rankForUser(pool: PoolItem[], user: UserPrefs, opts: { wildcard?: boolean; limit?: number } = {}): Ranked[] {
   const limit = opts.limit ?? (user.depth === "quick" ? 5 : 7);
@@ -34,16 +35,21 @@ export function rankForUser(pool: PoolItem[], user: UserPrefs, opts: { wildcard?
 
   const out: Ranked[] = [];
   const perTopic: Record<string, number> = {};
+  const perSite: Record<string, number> = {};
   const wantWildcard = !!opts.wildcard;
   const mainLimit = wantWildcard ? limit - 1 : limit;
+  const maxPerSite = Math.max(1, limit - SITE_RESERVED);
 
   for (const it of scored) {
     if (out.length >= mainLimit) break;
+    const site = hostOf(it.source_urls[0] ?? "");
     if ((perTopic[it.topic] ?? 0) >= MAX_PER_TOPIC) continue;
+    if ((perSite[site] ?? 0) >= maxPerSite) continue;
     perTopic[it.topic] = (perTopic[it.topic] ?? 0) + 1;
+    perSite[site] = (perSite[site] ?? 0) + 1;
     out.push(it);
   }
-  // Pool too narrow for the per-topic cap → top up rather than send a short briefing
+  // Pool too narrow for the topic/site caps → top up rather than send a short briefing
   if (out.length < mainLimit) {
     const taken = new Set(out.map((i) => i.item_id));
     for (const it of scored) {
