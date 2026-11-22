@@ -168,6 +168,7 @@ async function onMessage(c: Ctx, msg: any) {
   const id: number = msg.from.id;
   const text: string = (msg.text ?? "").trim();
   const u = await c.db.ensureUser(id, msg.from.first_name, msg.from.language_code);
+  if (u.isNew) notifyOwnerNewUser(c, msg.from);
 
   const m = text.match(/^\/([a-z_]+)(?:@\w+)?\s*([\s\S]*)$/i);
   if (!m) {
@@ -227,6 +228,19 @@ async function cmdSaved(c: Ctx, id: number) {
   await c.tg.send(id, { text: lines.join("\n"), reply_markup: kb(chunk(items.map((it, i) => cb(`${i + 1}`, `d:${it.item_id}`)), 5)) });
 }
 
+/** Pings the owner (OWNER_TG_ID) when someone uses the bot for the first time. Runs in the background; never blocks or breaks the user's request. */
+function notifyOwnerNewUser(c: Ctx, from: { id: number; first_name?: string; username?: string; language_code?: string }) {
+  const owner = Number(c.env.OWNER_TG_ID);
+  if (!owner || from.id === owner) return;
+  c.exec.waitUntil(
+    (async () => {
+      const total = (await c.db.d1.prepare("SELECT COUNT(*) AS n FROM users").first<{ n: number }>())?.n ?? "?";
+      const who = [esc(from.first_name || "Someone"), from.username ? `@${esc(from.username)}` : "", from.language_code ? `(${esc(from.language_code)})` : ""].filter(Boolean).join(" ");
+      await c.tg.send(owner, `👋 <b>New user:</b> ${who}\nTotal users: ${total}`);
+    })().catch((e) => console.error("owner new-user ping failed", e)),
+  );
+}
+
 async function cmdAdmin(c: Ctx, id: number) {
   if (String(id) !== c.env.OWNER_TG_ID) return void (await c.tg.send(id, "Unknown command. /help lists everything I can do."));
   const d1 = c.env.DB;
@@ -265,6 +279,7 @@ async function onCallback(c: Ctx, q: any) {
   const data: string = q.data ?? "";
   const [a, b, x] = data.split(":");
   const u = await c.db.ensureUser(id, q.from.first_name, q.from.language_code);
+  if (u.isNew) notifyOwnerNewUser(c, q.from);
   const edit = (r: Rendered) => (msgId ? c.tg.edit(chatId, msgId, r) : c.tg.send(chatId, r));
 
   // ── onboarding / topics / settings screens

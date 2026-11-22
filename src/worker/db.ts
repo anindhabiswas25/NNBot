@@ -43,7 +43,8 @@ export class DB {
     return this.d1.prepare("SELECT * FROM users WHERE tg_user_id = ?").bind(id).first<UserRow>();
   }
 
-  async ensureUser(id: number, firstName: string | undefined, language: string | undefined): Promise<UserRow> {
+  /** Upserts the user; `isNew` is true only on the request that created the row. */
+  async ensureUser(id: number, firstName: string | undefined, language: string | undefined): Promise<UserRow & { isNew: boolean }> {
     const t = now();
     await this.d1
       .prepare(
@@ -54,7 +55,8 @@ export class DB {
       )
       .bind(id, (firstName ?? "").slice(0, 64), (language ?? "en").slice(0, 8), t, t)
       .run();
-    return (await this.getUser(id))!;
+    const row = (await this.getUser(id))!;
+    return { ...row, isNew: row.created_at === t };
   }
 
   async updateUser(id: number, fields: Partial<Omit<UserRow, "tg_user_id">>) {
