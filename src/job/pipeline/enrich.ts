@@ -61,6 +61,7 @@ async function cryptoFacts(stories: Story[], env: NodeJS.ProcessEnv) {
         (c) => c.market_cap_rank <= 50 && (new RegExp(`\\b${esc(c.name)}\\b`, "i").test(title) || (c.symbol.length >= 3 && new RegExp(`\\b${esc(c.symbol.toUpperCase())}\\b`).test(title))),
       );
       if (coin) {
+        s.data.coin = coin.symbol.toUpperCase();
         s.data.price = coin.current_price;
         s.data.price_change_24h = coin.price_change_percentage_24h_in_currency;
         s.data.price_change_7d = coin.price_change_percentage_7d_in_currency;

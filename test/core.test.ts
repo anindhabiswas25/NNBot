@@ -152,3 +152,18 @@ test("describe: internal addresses are never fetched", async () => {
   ]) assert.ok(isPrivateIp(ip), ip);
   for (const ip of ["8.8.8.8", "140.82.112.3", "2606:4700::6810:84e5"]) assert.equal(isPrivateIp(ip), false, ip);
 });
+
+test("codeUrlFrom: pulls repo links out of arXiv abstracts", async () => {
+  const { codeUrlFrom } = await import("../src/job/connectors/arxiv");
+  assert.equal(codeUrlFrom("Code is available at https://github.com/ambroise-b/hisa."), "https://github.com/ambroise-b/hisa");
+  assert.equal(codeUrlFrom("see github.com/nari-labs/nari-llama.cpp."), "https://github.com/nari-labs/nari-llama.cpp");
+  assert.equal(codeUrlFrom("repo: https://GitHub.com/a/b.git, thanks"), "https://github.com/a/b");
+  assert.equal(codeUrlFrom("project page https://dreamtechai.github.io/Direct3D-V3"), undefined);
+  assert.equal(codeUrlFrom("no links here"), undefined);
+});
+
+test("dataLine: labels a price move with its coin ticker", async () => {
+  const { dataLine } = await import("../src/shared/render");
+  assert.match(dataLine("news", { coin: "BTC", price_change_24h: 5.9 }, 1), /BTC 24h \+5\.9%/);
+  assert.match(dataLine("news", { price_change_24h: 5.9 }, 1), /^24h \+5\.9%/);
+});

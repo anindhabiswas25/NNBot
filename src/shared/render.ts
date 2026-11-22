@@ -45,7 +45,7 @@ export function dataLine(type: string, d: ItemData, sources: number): string {
     if (d.stars) parts.push(`⭐${fmtNum(d.stars)}`);
   } else {
     if (d.tvl) parts.push(`TVL ${fmtUsd(d.tvl)}${d.tvl_change_7d != null ? ` (${fmtPct(d.tvl_change_7d)} 7d)` : ""}`);
-    if (d.price_change_24h != null) parts.push(`24h ${fmtPct(d.price_change_24h)}`);
+    if (d.price_change_24h != null) parts.push(`${d.coin ? `${d.coin} ` : ""}24h ${fmtPct(d.price_change_24h)}`);
     if (sources > 1) parts.push(`${sources} sources`);
     if (d.sentiment) parts.push(`Sentiment ${SENTIMENT[d.sentiment]}`);
   }
@@ -160,8 +160,8 @@ export function renderDetail(it: PoolItem, opts: { saved?: boolean } = {}): Rend
   if (d.model_size) facts.push(`Size ${esc(d.model_size)}`);
   if (d.license) facts.push(`Licence ${esc(d.license)}`);
   if (d.tvl) facts.push(`TVL ${fmtUsd(d.tvl)}${d.tvl_change_7d != null ? ` (${fmtPct(d.tvl_change_7d)} 7d)` : ""} (DefiLlama)`);
-  if (d.price != null) facts.push(`Price $${d.price < 1 ? d.price.toPrecision(3) : d.price.toLocaleString("en-US", { maximumFractionDigits: 2 })} (CoinGecko)`);
-  if (d.price_change_24h != null) facts.push(`24h ${fmtPct(d.price_change_24h)}`);
+  if (d.price != null) facts.push(`${d.coin ? `${esc(d.coin)} price` : "Price"} $${d.price < 1 ? d.price.toPrecision(3) : d.price.toLocaleString("en-US", { maximumFractionDigits: 2 })} (CoinGecko)`);
+  if (d.price_change_24h != null) facts.push(`${d.coin ? `${esc(d.coin)} ` : ""}24h ${fmtPct(d.price_change_24h)}`);
   if (d.price_change_7d != null) facts.push(`7d ${fmtPct(d.price_change_7d)}`);
   if (d.sources_count && d.sources_count > 1) facts.push(`${d.sources_count} sources`);
   if (d.sentiment) facts.push(`Sentiment ${SENTIMENT[d.sentiment]}`);

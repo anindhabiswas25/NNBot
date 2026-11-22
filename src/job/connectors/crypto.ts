@@ -121,7 +121,7 @@ export const coinGecko: Connector = {
           type: "data",
           trust: 1,
           ids: { gecko: c.id },
-          data: { price: c.current_price, price_change_24h: ch, price_change_7d: c.price_change_percentage_7d_in_currency },
+          data: { coin: c.symbol.toUpperCase(), price: c.current_price, price_change_24h: ch, price_change_7d: c.price_change_percentage_7d_in_currency },
         };
       });
   },
@@ -151,7 +151,7 @@ export const dexScreener: Connector = {
         published_at: new Date().toISOString(),
         type: "data",
         trust: 3,
-        data: { price_change_24h: p.priceChange?.h24 },
+        data: { coin: /^[A-Za-z0-9$._-]{1,15}$/.test(p.baseToken?.symbol ?? "") ? p.baseToken.symbol.toUpperCase() : undefined, price_change_24h: p.priceChange?.h24 },
       });
     }
     return out;

@@ -12,7 +12,7 @@ const RULES = `Rules: be neutral and factual. Never give financial advice, buy/s
 /** One compact line of facts instead of a JSON object per story (fewer input tokens, same information). */
 function compactFacts(s: Story): string {
   const d = s.data;
-  return Object.entries({ hf_upvotes: d.hf_upvotes, citations: d.citations, code: d.code_url ? "yes" : undefined, hn_points: d.hn_points, stars: d.stars, likes: d.likes, tvl: d.tvl, tvl_change_7d: d.tvl_change_7d, price_change_24h: d.price_change_24h, license: d.license, size: d.model_size })
+  return Object.entries({ hf_upvotes: d.hf_upvotes, citations: d.citations, code: d.code_url ? "yes" : undefined, hn_points: d.hn_points, stars: d.stars, likes: d.likes, tvl: d.tvl, tvl_change_7d: d.tvl_change_7d, coin: d.coin, price_change_24h: d.price_change_24h, license: d.license, size: d.model_size })
     .filter(([, v]) => v != null)
     .map(([k, v]) => `${k}=${v}`)
     .join(", ");
@@ -137,7 +137,7 @@ export async function writeStories(env: AIEnv, stories: Story[]): Promise<Map<nu
         schema: WRITER_SCHEMA,
         system: `You write ${BOT_NAME} briefings for students and researchers. Use ONLY the supplied text and facts — if something isn't there, leave it out. Only use numbers that appear in the supplied text or facts. Plain, friendly English; no hype words (revolutionary, game-changing, huge). ${RULES}`,
         prompt: `For each story write:
-- headline: ≤ 80 chars, specific, no clickbait
+- headline: ≤ 80 chars, specific, no clickbait; for papers say what it does in plain words rather than copying the paper title
 - summary_short: 1 line, ≤ 140 chars
 - summary_long: 2 lines, ≤ 300 chars
 - why_it_matters: ≤ 120 chars, for a student or researcher
@@ -146,7 +146,8 @@ export async function writeStories(env: AIEnv, stories: Story[]): Promise<Map<nu
 
 Accuracy rules:
 - When you use a number, keep exactly what it counts and its qualifiers as the source states them ("180 configurations", not "180 tasks"; "35B-A3B", not "35B").
-- why_it_matters names a concrete use — what a student or researcher could do with it, learn from it, or compare it against — not a general statement.
+- Keep conditions and timing the source attaches to a claim ("can trade once the central bank approves rules; pilot starts in December", not "permits trading from Nov. 22").
+- why_it_matters names one concrete consequence or use specific to THIS story — what changes, what someone can now do, try, or build with it (e.g. "Low-bit agent models could run on a single consumer GPU", "Security agents can be tricked by the code they scan"). Do NOT use the pattern "X can compare A against B", and don't open with "Students can" / "Researchers can". No generic statements. Vary the phrasing across stories.
 
 ${batch
   .map((s) =>

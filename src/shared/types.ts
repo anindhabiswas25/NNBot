@@ -22,6 +22,8 @@ export interface ItemData {
   tvl_change_7d?: number;
   price?: number;
   price_change_24h?: number;
+  /** Ticker the price fields refer to (e.g. "BTC"), so a % next to a news story says whose price it is. */
+  coin?: string;
   price_change_7d?: number;
   sources_count?: number;
   sentiment?: "positive" | "neutral" | "negative";
