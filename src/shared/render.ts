@@ -39,7 +39,7 @@ export function dataLine(type: string, d: ItemData, sources: number): string {
   } else if (type === "launch") {
     if (d.lab) parts.push(d.lab);
     if (d.model_size) parts.push(d.model_size);
-    if (d.license) parts.push(d.license);
+    if (d.license && !/^(other|unknown)$/i.test(d.license)) parts.push(d.license);
     if (d.downloads) parts.push(`⬇️${fmtNum(d.downloads)}`);
     if (d.version) parts.push(d.version);
     if (d.stars) parts.push(`⭐${fmtNum(d.stars)}`);
@@ -158,7 +158,7 @@ export function renderDetail(it: PoolItem, opts: { saved?: boolean } = {}): Rend
   if (d.likes) facts.push(`Likes ${fmtNum(d.likes)}`);
   if (d.stars) facts.push(`Stars ${fmtNum(d.stars)}`);
   if (d.model_size) facts.push(`Size ${esc(d.model_size)}`);
-  if (d.license) facts.push(`Licence ${esc(d.license)}`);
+  if (d.license && !/^(other|unknown)$/i.test(d.license)) facts.push(`Licence ${esc(d.license)}`);
   if (d.tvl) facts.push(`TVL ${fmtUsd(d.tvl)}${d.tvl_change_7d != null ? ` (${fmtPct(d.tvl_change_7d)} 7d)` : ""} (DefiLlama)`);
   if (d.price != null) facts.push(`${d.coin ? `${esc(d.coin)} price` : "Price"} $${d.price < 1 ? d.price.toPrecision(3) : d.price.toLocaleString("en-US", { maximumFractionDigits: 2 })} (CoinGecko)`);
   if (d.price_change_24h != null) facts.push(`${d.coin ? `${esc(d.coin)} ` : ""}24h ${fmtPct(d.price_change_24h)}`);

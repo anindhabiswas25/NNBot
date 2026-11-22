@@ -39,7 +39,7 @@ export const hfPapers: Connector = {
 };
 
 /** Quantised / converted re-uploads of someone else's model are not launches. */
-const REUPLOAD = /gguf|awq|gptq|mlx|bnb|exl2|[-_](4|8)bit|[-_]fp8|[-_]int[48]|[-_]q[2-8]_/i;
+const REUPLOAD = /gguf|awq|gptq|mlx|bnb|exl2|[-_](4|8)bit|[-_](nv|mx)?fp[48]|[-_]int[48]|[-_]q[2-8]_/i;
 
 function fmtParams(n?: number): string | undefined {
   if (!n) return undefined;

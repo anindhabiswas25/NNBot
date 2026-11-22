@@ -147,7 +147,7 @@ export async function writeStories(env: AIEnv, stories: Story[]): Promise<Map<nu
 Accuracy rules:
 - When you use a number, keep exactly what it counts and its qualifiers as the source states them ("180 configurations", not "180 tasks"; "35B-A3B", not "35B").
 - Keep conditions and timing the source attaches to a claim ("can trade once the central bank approves rules; pilot starts in December", not "permits trading from Nov. 22").
-- why_it_matters names one concrete consequence or use specific to THIS story — what changes, what someone can now do, try, or build with it (e.g. "Low-bit agent models could run on a single consumer GPU", "Security agents can be tricked by the code they scan"). Do NOT use the pattern "X can compare A against B", and don't open with "Students can" / "Researchers can". No generic statements. Vary the phrasing across stories.
+- why_it_matters names one concrete consequence or use specific to THIS story — what changes, what someone can now do, try, or build with it, grounded in that story's own text — never add capabilities, hardware needs, or use cases the text doesn't state, and don't just restate the summary. Do NOT use the pattern "X can compare A against B", and don't open with "Students can" / "Researchers can". No generic statements. Vary the phrasing across stories.
 
 ${batch
   .map((s) =>
