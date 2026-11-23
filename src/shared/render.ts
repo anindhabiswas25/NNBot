@@ -32,7 +32,7 @@ const SENTIMENT = { positive: "🟢", neutral: "⚪", negative: "🔴" } as cons
 export function dataLine(type: string, d: ItemData, sources: number): string {
   const parts: string[] = [];
   if (type === "paper") {
-    parts.push(d.code_url ? "Code ✅" : "Code ❌");
+    if (d.paper_url) parts.push(d.code_url ? "Code ✅" : "Code ❌"); // arXiv/HF papers only, not forum posts
     if (d.hf_upvotes) parts.push(`HF 🔥${d.hf_upvotes}`);
     if (d.citations) parts.push(`Cites ${d.citations}`);
     if (d.category) parts.push(d.category);
@@ -152,7 +152,7 @@ export function renderDetail(it: PoolItem, opts: { saved?: boolean } = {}): Rend
 
   const facts: string[] = [];
   if (d.citations != null) facts.push(`Citations ${d.citations}${d.influential ? ` (${d.influential} influential)` : ""}`);
-  if (it.type === "paper") facts.push(d.code_url ? "Code ✅" : "Code ❌");
+  if (it.type === "paper" && d.paper_url) facts.push(d.code_url ? "Code ✅" : "Code ❌");
   if (d.hf_upvotes) facts.push(`HF 🔥${d.hf_upvotes}`);
   if (d.downloads) facts.push(`Downloads ${fmtNum(d.downloads)}`);
   if (d.likes) facts.push(`Likes ${fmtNum(d.likes)}`);

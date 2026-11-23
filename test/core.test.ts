@@ -167,3 +167,36 @@ test("dataLine: labels a price move with its coin ticker", async () => {
   assert.match(dataLine("news", { coin: "BTC", price_change_24h: 5.9 }, 1), /BTC 24h \+5\.9%/);
   assert.match(dataLine("news", { price_change_24h: 5.9 }, 1), /^24h \+5\.9%/);
 });
+
+test("dataLine: Code ✅/❌ only for arXiv/HF papers, not forum posts", async () => {
+  const { dataLine } = await import("../src/shared/render");
+  assert.match(dataLine("paper", { paper_url: "https://arxiv.org/abs/2611.00001" }, 1), /Code ❌/);
+  assert.doesNotMatch(dataLine("paper", {}, 1), /Code/);
+});
+
+test("marketMove: median 24h move of the top 20 coins", async () => {
+  const { marketMove, PRICE_EXCESS_PCT } = await import("../src/job/pipeline/enrich");
+  const coins = [4.4, 4.2, 4.0, 3.9, -1, 12].map((m, i) => ({ market_cap_rank: i + 1, price_change_percentage_24h_in_currency: m }));
+  coins.push({ market_cap_rank: 40, price_change_percentage_24h_in_currency: 50 });
+  const m = marketMove(coins);
+  assert.ok(m > 3.9 && m <= 4.2);
+  assert.ok(Math.abs(4.2 - m) < PRICE_EXCESS_PCT); // ETH +4.2% on a +4% day: no tag
+  assert.ok(Math.abs(-12 - m) >= PRICE_EXCESS_PCT); // a token down 12%: tagged
+  assert.equal(marketMove([]), 0);
+});
+
+test("hfPapers: filters on the featured date, reaching Friday's list on Monday", async () => {
+  const { hfPapers } = await import("../src/job/connectors/huggingface");
+  const row = (featured: string, published: string, id: string) => ({ publishedAt: published, paper: { id, title: id, summary: "s", authors: [], submittedOnDailyAt: featured } });
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify([
+    row("2026-11-20T00:00:00Z", "2026-11-17T00:00:00Z", "2611.00001"), // Friday's list, older paper → kept
+    row("2026-11-12T00:00:00Z", "2026-11-11T00:00:00Z", "2611.00002"), // last week → dropped
+  ]))) as typeof fetch;
+  try {
+    const out = await hfPapers.run({ since: new Date("2026-11-22T01:11:00Z"), env: {} });
+    assert.deepEqual(out.map((o) => o.ids?.arxiv), ["2611.00001"]);
+  } finally {
+    globalThis.fetch = orig;
+  }
+});

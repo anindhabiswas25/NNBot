@@ -54,6 +54,8 @@ const args = parseArgs();
 const tg = new Telegram(env.TELEGRAM_BOT_TOKEN ?? "");
 const api = args.dryRun ? null : new Api(env.WORKER_URL ?? "", env.INTERNAL_API_KEY ?? "");
 const failures: string[] = [];
+/** A content pool smaller than this alerts the owner. */
+const MIN_POOL = 5;
 
 async function alertOwner(text: string) {
   log(`ALERT: ${text}`);
@@ -285,6 +287,11 @@ async function runSlot(key: SlotKey | "wrap") {
       await alertOwner(`${SLOTS[slot].name}: empty pool, nothing sent.\n${failures.join("\n")}`);
       return;
     }
+    if (built.items.length < MIN_POOL) {
+      // Still sent (a short brief beats none), but the owner hears before the slot time, not from users.
+      await alertOwner(`${SLOTS[slot].name}: only ${built.items.length} item${built.items.length === 1 ? "" : "s"} in the pool (sends at slot time).\n${failures.map((f) => `• ${f}`).join("\n") || "No source errors — sources were just quiet."}`);
+      failures.length = 0; // already reported
+    }
     const res = await api.putPool(date, slot, built.items, built.meta);
     if (res.error) log(`pool store: ${res.error}`);
     await api.addSentUrls(built.hashes);
@@ -315,6 +322,7 @@ async function dryRun(key: SlotKey | "wrap", slot: number, date: string) {
   console.log("\n──────── digest (HTML) ────────\n" + r.text + `\n\n(${r.text.length} chars)`);
   console.log("\n──────── detail text, top 5 ────────");
   for (const it of pool.slice(0, 5)) console.log(`\n■ ${it.title}  (${it.source_urls[0]})\n  long:   ${it.summary_long}\n  why:    ${it.why_it_matters}\n  simple: ${it.simple_words}`);
+  if (built.items.length < MIN_POOL) console.log(`\n⚠️ only ${built.items.length} items in the pool — a real run would alert the owner`);
   if (failures.length) console.log(`\nsource issues:\n${failures.map((f) => ` • ${f}`).join("\n")}`);
   if (args.previewTo) {
     await sendOne(tg, new RateLimiter(1), Number(args.previewTo), r);

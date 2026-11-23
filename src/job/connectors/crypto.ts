@@ -1,3 +1,4 @@
+import { fmtUsd } from "../../shared/render";
 import { DEFI, PRICE_MOVE_PCT } from "../sources";
 import type { Connector, RawItem } from "../types";
 import { getJson, truncate } from "../util";
@@ -56,7 +57,7 @@ export const defiLlama: Connector = {
       if (p.listedAt && p.listedAt > recent && p.tvl >= DEFI.newProtocolMinTvl) {
         out.push({
           title: `${p.name} launches on ${chains || "DeFi"}`,
-          text: truncate(`${p.name} (${p.category}) was newly listed on DefiLlama with ${Math.round(p.tvl).toLocaleString("en-US")} USD TVL. ${p.description ?? ""}`, 800),
+          text: truncate(`${p.name} (${p.category}) was newly listed on DefiLlama with ${fmtUsd(p.tvl)} in total value locked. ${p.description ?? ""}`, 800),
           url: llamaUrl,
           extra_urls: p.url ? [p.url] : [],
           source: "DefiLlama",
@@ -71,7 +72,7 @@ export const defiLlama: Connector = {
         const up = (p.change_7d ?? 0) > 0;
         out.push({
           title: `${p.name} TVL ${up ? "jumps" : "drops"} ${Math.abs(Math.round(p.change_7d!))}% in a week`,
-          text: truncate(`${p.name} (${p.category} on ${chains}) total value locked changed ${p.change_7d!.toFixed(1)}% over 7 days to ${Math.round(p.tvl).toLocaleString("en-US")} USD, per DefiLlama. ${p.description ?? ""}`, 800),
+          text: truncate(`${p.name} (${p.category} on ${chains}) total value locked is ${fmtUsd(p.tvl)}, ${up ? "up" : "down"} ${Math.abs(p.change_7d!).toFixed(1)}% over the past 7 days, per DefiLlama. ${p.description ?? ""}`, 800),
           url: llamaUrl,
           extra_urls: p.url ? [p.url] : [],
           source: "DefiLlama",

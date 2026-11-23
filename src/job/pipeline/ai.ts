@@ -146,7 +146,10 @@ export async function writeStories(env: AIEnv, stories: Story[]): Promise<Map<nu
 
 Accuracy rules:
 - When you use a number, keep exactly what it counts and its qualifiers as the source states them ("180 configurations", not "180 tasks"; "35B-A3B", not "35B").
+- Never infer or generalise beyond the text ("theft of 122.9 BTC" does not mean "drained funds across several assets"). Names and people: copy them exactly as the source gives them; if a name looks garbled or you can't tell who it is, leave it out.
 - Keep conditions and timing the source attaches to a claim ("can trade once the central bank approves rules; pilot starts in December", not "permits trading from Nov. 22").
+- summary_short and summary_long must add facts beyond the headline (who, how much, what happens next) — never restate the headline in other words. why_it_matters must not repeat either summary.
+- Write large numbers the way a reader says them ("$1.3B", "2.4M users"), never as raw digits like "1,341,633,374".
 - why_it_matters names one concrete consequence or use specific to THIS story — what changes, what someone can now do, try, or build with it, grounded in that story's own text — never add capabilities, hardware needs, or use cases the text doesn't state, and don't just restate the summary. Do NOT use the pattern "X can compare A against B", and don't open with "Students can" / "Researchers can". No generic statements. Vary the phrasing across stories.
 
 ${batch

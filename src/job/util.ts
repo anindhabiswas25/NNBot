@@ -18,19 +18,33 @@ export const log = (...a: unknown[]) => console.log(`[${new Date().toISOString()
 
 export const UA = "NodeNeuronBot/0.1 (research digest; +https://t.me/NodeNeuronBot)";
 
-export async function http(url: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<Response> {
-  const { timeoutMs = 30_000, ...rest } = init;
-  const res = await fetch(url, {
-    ...rest,
-    headers: { "user-agent": UA, ...(rest.headers as Record<string, string>) },
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url.replace(/(key|token|auth_token)=[^&]+/gi, "$1=***")}`);
-  return res;
+/**
+ * fetch with a timeout and a polite UA. `retries` re-tries 429/503 responses, waiting Retry-After
+ * (capped at 60 s) or 15 s × attempt.
+ */
+export async function http(url: string, init: RequestInit & { timeoutMs?: number; retries?: number } = {}): Promise<Response> {
+  const { timeoutMs = 30_000, retries = 0, ...rest } = init;
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, {
+      ...rest,
+      headers: { "user-agent": UA, ...(rest.headers as Record<string, string>) },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if ((res.status === 429 || res.status === 503) && attempt < retries) {
+      const after = Number(res.headers.get("retry-after"));
+      const wait = Number.isFinite(after) && after > 0 ? Math.min(60, after) * 1000 : 15_000 * (attempt + 1);
+      log(`  ${res.status} from ${new URL(url).hostname}, retrying in ${Math.round(wait / 1000)} s`);
+      await res.body?.cancel();
+      await sleep(wait);
+      continue;
+    }
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url.replace(/(key|token|auth_token)=[^&]+/gi, "$1=***")}`);
+    return res;
+  }
 }
 
-export const getJson = async <T = any>(url: string, init?: RequestInit & { timeoutMs?: number }) => (await http(url, init)).json() as Promise<T>;
-export const getText = async (url: string, init?: RequestInit & { timeoutMs?: number }) => (await http(url, init)).text();
+export const getJson = async <T = any>(url: string, init?: RequestInit & { timeoutMs?: number; retries?: number }) => (await http(url, init)).json() as Promise<T>;
+export const getText = async (url: string, init?: RequestInit & { timeoutMs?: number; retries?: number }) => (await http(url, init)).text();
 
 export const sha1 = (s: string) => createHash("sha1").update(s).digest("hex").slice(0, 20);
 

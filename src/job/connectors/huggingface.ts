@@ -7,9 +7,13 @@ export const hfPapers: Connector = {
   slots: ["research"],
   async run({ since }) {
     const rows: any[] = await getJson("https://huggingface.co/api/daily_papers?limit=100");
-    const cutoff = new Date(since.getTime() - 48 * 3_600_000); // daily list lags a day or two
+    // Filter on when HF *featured* the paper, not the paper's own arXiv date (r.publishedAt), which is
+    // usually 2–5 days older. Dates are midnight UTC and there's no list on weekends, so look back 3 whole
+    // days (Monday reaches Friday's list); the 7-day sent-URL dedupe drops anything already sent.
+    const cutoff = new Date(since.getTime() - 72 * 3_600_000);
+    cutoff.setUTCHours(0, 0, 0, 0);
     return rows
-      .filter((r) => new Date(r.publishedAt ?? r.paper?.submittedOnDailyAt ?? 0) >= cutoff)
+      .filter((r) => new Date(r.paper?.submittedOnDailyAt ?? r.publishedAt ?? 0) >= cutoff)
       .map((r): RawItem => {
         const p = r.paper;
         const authors = (p.authors ?? []).map((a: any) => a.name).filter(Boolean);

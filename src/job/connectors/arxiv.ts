@@ -1,6 +1,6 @@
 import { ARXIV_CATEGORIES } from "../sources";
 import type { Connector, RawItem } from "../types";
-import { getText, stripHtml, truncate } from "../util";
+import { getText, log, sleep, stripHtml, truncate } from "../util";
 import { parseFeed } from "./rss";
 
 const idOf = (url: string) => url.match(/(\d{4}\.\d{4,5})/)?.[1];
@@ -13,23 +13,37 @@ export function codeUrlFrom(text: string): string | undefined {
   return repo ? `https://${m[1].toLowerCase()}/${m[2]}/${repo}` : undefined;
 }
 
+const RSS_URL = `https://rss.arxiv.org/rss/${ARXIV_CATEGORIES.join("+")}`;
+
+async function rssEntries() {
+  const rss = parseFeed(await getText(RSS_URL, { timeoutMs: 45_000, retries: 2 }));
+  return rss
+    .filter((e) => !/Announce Type:\s*(replace|replace-cross)/i.test(e.text))
+    .map((e) => ({ ...e, text: e.text.replace(/^.*?Abstract:\s*/i, "") }));
+}
+
 /**
- * New arXiv papers. Uses the daily RSS announcement (fast, complete); on weekends/holidays the RSS is
- * empty, so falls back to the API sorted by submission date.
+ * New arXiv papers. Uses the daily RSS announcement (fast, complete). The RSS is empty on weekends,
+ * and briefly around the ~01:00 UTC announcement, so it falls back to the API sorted by submission
+ * date (retrying rate limits), and if that fails too, gives the RSS one more try.
  */
 export const arxiv: Connector = {
   name: "arXiv",
   slots: ["research"],
   async run({ since }) {
-    const rss = parseFeed(await getText(`https://rss.arxiv.org/rss/${ARXIV_CATEGORIES.join("+")}`, { timeoutMs: 45_000 }));
-    let entries = rss
-      .filter((e) => !/Announce Type:\s*(replace|replace-cross)/i.test(e.text))
-      .map((e) => ({ ...e, text: e.text.replace(/^.*?Abstract:\s*/i, "") }));
+    let entries = await rssEntries();
 
     if (!entries.length) {
       const q = ARXIV_CATEGORIES.map((c) => `cat:${c}`).join("+OR+");
-      const xml = await getText(`https://export.arxiv.org/api/query?search_query=${q}&sortBy=submittedDate&sortOrder=descending&max_results=300`, { timeoutMs: 60_000 });
-      entries = parseFeed(xml).filter((e) => new Date(e.published) >= new Date(since.getTime() - 48 * 3_600_000));
+      try {
+        const xml = await getText(`https://export.arxiv.org/api/query?search_query=${q}&sortBy=submittedDate&sortOrder=descending&max_results=300`, { timeoutMs: 60_000, retries: 3 });
+        entries = parseFeed(xml).filter((e) => new Date(e.published) >= new Date(since.getTime() - 48 * 3_600_000));
+      } catch (e) {
+        log(`  arXiv API failed (${(e as Error).message.slice(0, 80)}); trying the RSS again in 60 s`);
+        await sleep(60_000);
+        entries = await rssEntries();
+        if (!entries.length) throw e;
+      }
     }
 
     const out: RawItem[] = [];
